@@ -1,68 +1,71 @@
-name: .NET and Docker
+name: 天翼云电脑保活
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+  # 每50分钟执行一次
+  schedule:
+    - cron: '*/50 * * * *'
+  
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      sms_code:
+        description: '短信验证码（仅首次设备绑定需要）'
+        required: false
+        type: string
 
 jobs:
-  build-and-release:
+  keepalive:
     runs-on: ubuntu-latest
-
+    
     steps:
-    # 检出代码 
-    - uses: actions/checkout@v4
-
-    # 设置 .NET 环境
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-
-    # 确定版本号  
-    - name: Read project version
-      id: get-version
-      run: |
-        version=$(grep -oP '(?<=<FileVersion>).*?(?=</FileVersion>)' CtYun/CtYun.csproj)
-        if [ -z "$version" ]; then
-          echo "Error: Unable to read version from CtYun.csproj"
-          exit 1
-        fi
-        echo "version=$version" >> $GITHUB_ENV
-        echo "Version: $version"
-    # 恢复依赖
-    - name: Restore dependencies
-      run: dotnet restore
-
-    # 构建应用程序
-    - name: Build
-      run: dotnet build --no-restore --configuration Release
-
-    # 发布应用程序
-    - name: Publish Application
-      run: dotnet publish CtYun/CtYun.csproj -c Release -p:PublishAot=false -o publish
-
-    # 登录 Docker Hub
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    # 设置 Buildx
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-      with:
-        driver: docker-container
-
-    # 构建和推送多架构 Docker 镜像
-    - name: Build and Push Multi-Arch Docker Image
-      run: |
-        docker buildx build \
-          --no-cache \
-          --platform linux/amd64,linux/arm64 \
-          -t ${{ secrets.DOCKER_USERNAME }}/ctyun:${{ env.version }} \
-          -t ${{ secrets.DOCKER_USERNAME }}/ctyun:latest \
-          -f ./CtYun/Dockerfile \
-          --push .
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 设置 .NET 环境
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: 还原依赖
+        run: dotnet restore CtYun/CtYun.csproj
+      
+      - name: 编译项目
+        run: dotnet build CtYun/CtYun.csproj --configuration Release --no-restore
+      
+      - name: 运行保活程序
+        env:
+          APP_USER: ${{ secrets.CTYUN_USER }}
+          APP_PASSWORD: ${{ secrets.CTYUN_PASSWORD }}
+          DEVICECODE: ${{ secrets.DEVICE_CODE }}
+          SMS_CODE: ${{ github.event.inputs.sms_code }}
+        run: |
+          cd CtYun/bin/Release/net8.0
+          
+          # 如果提供了验证码，传递给程序
+          if [ -n "$SMS_CODE" ]; then
+            echo "使用提供的短信验证码进行设备绑定..."
+            echo "$SMS_CODE" | timeout 3m dotnet CtYun.dll || true
+          else
+            timeout 3m dotnet CtYun.dll || true
+          fi
+        continue-on-error: true
+      
+      - name: 上传日志（如果失败）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_number }}
+          path: |
+            CtYun/bin/Release/net8.0/*.log
+            CtYun/bin/Release/net8.0/*.txt
+          retention-days: 7
+      
+      - name: 任务完成通知
+        if: always()
+        run: |
+          echo "========================================="
+          echo "保活任务执行完成"
+          echo "执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "北京时间: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+          echo "下次执行: 50分钟后"
+          echo "========================================="

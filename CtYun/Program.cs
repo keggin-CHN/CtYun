@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Net.WebSockets;
 using System.Reflection;
@@ -146,7 +146,13 @@ static async Task ReceiveLoop(ClientWebSocket ws, Desktop desktop, CancellationT
 #region 辅助工具
 static (string user, string pwd, string code) ResolveCredentials()
 {
-    if (IsRunningInContainer() || Debugger.IsAttached)
+    // 检查是否在CI/CD环境或容器中运行
+    var isAutomated = IsRunningInContainer() ||
+                      Debugger.IsAttached ||
+                      !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")) ||
+                      !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
+    
+    if (isAutomated)
     {
         return (Environment.GetEnvironmentVariable("APP_USER"),
                 Environment.GetEnvironmentVariable("APP_PASSWORD"),
@@ -165,8 +171,20 @@ static async Task<bool> PerformLoginSequence(CtYunApi api, string u, string p)
     if (!api.LoginInfo.BondedDevice)
     {
         await api.GetSmsCodeAsync(u);
-        Console.Write("短信验证码: ");
-        if (!await api.BindingDeviceAsync(Console.ReadLine())) return false;
+        
+        // 尝试从环境变量获取验证码（GitHub Actions支持）
+        var smsCode = Environment.GetEnvironmentVariable("SMS_CODE");
+        if (string.IsNullOrEmpty(smsCode))
+        {
+            Console.Write("短信验证码: ");
+            smsCode = Console.ReadLine();
+        }
+        else
+        {
+            Utility.WriteLine(ConsoleColor.Green, "使用环境变量中的短信验证码");
+        }
+        
+        if (!await api.BindingDeviceAsync(smsCode)) return false;
     }
     return true;
 }

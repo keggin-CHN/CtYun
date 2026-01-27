@@ -13,6 +13,11 @@ on:
         required: false
         type: string
 
+# 避免并发运行，确保上一个任务结束后才开始下一个
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   keepalive:
     runs-on: ubuntu-latest
@@ -50,8 +55,8 @@ jobs:
           fi
         continue-on-error: true
       
-      - name: 上传日志（如果失败）
-        if: failure()
+      - name: 上传日志
+        if: always() # 即使超时或成功也上传日志，以便排查问题
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ github.run_number }}

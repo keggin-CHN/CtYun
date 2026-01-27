@@ -20,7 +20,12 @@ CancellationTokenSource GlobalCts = new CancellationTokenSource();
 Utility.WriteLine(ConsoleColor.Green, $"版本：v {Assembly.GetEntryAssembly()?.GetName().Version}");
 
 var (userPhone, password, deviceCode) = ResolveCredentials();
-if (string.IsNullOrEmpty(userPhone)) return;
+if (string.IsNullOrEmpty(userPhone) || string.IsNullOrEmpty(password) || string.IsNullOrEmpty(deviceCode))
+{
+    Utility.WriteLine(ConsoleColor.Red, "错误：未检测到必要的凭据！");
+    Utility.WriteLine(ConsoleColor.Red, "请检查是否配置了 APP_USER, APP_PASSWORD 和 DEVICE_CODE 环境变量/Secrets。");
+    return;
+}
 
 var cyApi = new CtYunApi(deviceCode);
 if (!await PerformLoginSequence(cyApi, userPhone, password)) return;

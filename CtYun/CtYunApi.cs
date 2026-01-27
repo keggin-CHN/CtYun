@@ -126,7 +126,8 @@ namespace CtYun
         {
             try
             {
-                return await client.GetByteArrayAsync("https://desk.ctyun.cn:8810/api/auth/client/captcha?height=36&width=85&userInfo=" + userphone + "&mode=auto&_t=1749139280909");
+                var timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+                return await client.GetByteArrayAsync($"https://desk.ctyun.cn:8810/api/auth/client/captcha?height=36&width=85&userInfo={userphone}&mode=auto&_t={timestamp}");
             }
             catch (Exception ex)
             {
@@ -139,7 +140,8 @@ namespace CtYun
         {
             try
             {
-                return await GetByteAsync("https://desk.ctyun.cn:8810/api/auth/client/validateCode/captcha?width=120&height=40&_t=1766158569152");
+                var timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+                return await GetByteAsync($"https://desk.ctyun.cn:8810/api/auth/client/validateCode/captcha?width=120&height=40&_t={timestamp}");
             }
             catch (Exception ex)
             {

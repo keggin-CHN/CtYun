@@ -1,1 +1,77 @@
+name: 天翼云电脑保活
+
+on:
+  # 每10分钟执行一次
+  schedule:
+    - cron: '*/10 * * * *'
+  
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      sms_code:
+        description: '短信验证码（仅首次设备绑定需要）'
+        required: false
+        type: string
+
+# 避免并发运行，确保上一个任务结束后才开始下一个
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 设置 .NET 环境
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: 还原依赖
+        run: dotnet restore CtYun/CtYun.csproj
+      
+      - name: 编译项目
+        run: dotnet build CtYun/CtYun.csproj --configuration Release --no-restore
+      
+      - name: 运行保活程序
+        env:
+          APP_USER: ${{ secrets.CTYUN_USER }}
+          APP_PASSWORD: ${{ secrets.CTYUN_PASSWORD }}
+          DEVICECODE: ${{ secrets.DEVICE_CODE }}
+          SMS_CODE: ${{ github.event.inputs.sms_code }}
+        run: |
+          cd CtYun/bin/Release/net8.0
+          
+          # 如果提供了验证码，传递给程序
+          if [ -n "$SMS_CODE" ]; then
+            echo "使用提供的短信验证码进行设备绑定..."
+            echo "$SMS_CODE" | timeout 3m dotnet CtYun.dll || true
+          else
+            timeout 3m dotnet CtYun.dll || true
+          fi
+        continue-on-error: true
+      
+      - name: 上传日志
+        if: always() # 即使超时或成功也上传日志，以便排查问题
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_number }}
+          path: |
+            CtYun/bin/Release/net8.0/*.log
+            CtYun/bin/Release/net8.0/*.txt
+          retention-days: 7
+      
+      - name: 任务完成通知
+        if: always()
+        run: |
+          echo "========================================="
+          echo "保活任务执行完成"
+          echo "执行时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "北京时间: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+          echo "下次执行: 50分钟后"
+          echo "========================================="
 
